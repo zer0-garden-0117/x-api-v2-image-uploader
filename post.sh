@@ -4,6 +4,9 @@
 # スコープの設定
 SCOPE="tweet.read tweet.write users.read offline.access media.write"
 
+# トークン情報を保存するファイル
+TOKEN_FILE="token.json"
+
 # Twitter APIのクライアントIDとクライアントシークレットとリダイレクトURLをconfig.iniから読み込む
 CONFIG_FILE="config.ini"
 if [ ! -f "${CONFIG_FILE}" ]; then
@@ -48,6 +51,7 @@ function get_access_token() {
     --data-urlencode 'code_verifier=challenge')
   
   ACCESS_TOKEN=$(echo "${response}" | jq -r '.access_token')
+  REFRESH_TOKEN=$(echo "${response}" | jq -r '.refresh_token')
   
   if [ -z "${ACCESS_TOKEN}" ] || [ "${ACCESS_TOKEN}" = "null" ]; then
     echo "アクセストークンの取得に失敗しました"
@@ -55,7 +59,58 @@ function get_access_token() {
     exit 1
   fi
   
+  # トークン情報をファイルに保存
+  echo "${response}" > "${TOKEN_FILE}"
+  
   echo "アクセストークンを取得しました"
+  echo "リフレッシュトークンも保存しました"
+}
+
+# リフレッシュトークンを使ってアクセストークンを更新
+function refresh_access_token() {
+  # トークンファイルが存在するか確認
+  if [ ! -f "${TOKEN_FILE}" ]; then
+    echo "トークンファイルが見つかりません。先に認証を行ってください。"
+    return 1
+  fi
+  
+  # リフレッシュトークンを読み込む
+  local saved_refresh_token=$(jq -r '.refresh_token' "${TOKEN_FILE}")
+  
+  if [ -z "${saved_refresh_token}" ] || [ "${saved_refresh_token}" = "null" ]; then
+    echo "保存されたリフレッシュトークンが見つかりません。再度認証を行ってください。"
+    return 1
+  fi
+  
+  local auth_basic=$(echo -n "${CLIENT_ID}:${CLIENT_SECRET}" | base64)
+  
+  echo "リフレッシュトークンを使ってアクセストークンを更新中..."
+  
+  local response=$(curl --silent --location --request POST 'https://api.twitter.com/2/oauth2/token' \
+    --header 'Content-Type: application/x-www-form-urlencoded' \
+    --header "Authorization: Basic ${auth_basic}" \
+    --data-urlencode "refresh_token=${saved_refresh_token}" \
+    --data-urlencode 'grant_type=refresh_token')
+  
+  # 新しいアクセストークンとリフレッシュトークンを取得
+  local new_access_token=$(echo "${response}" | jq -r '.access_token')
+  local new_refresh_token=$(echo "${response}" | jq -r '.refresh_token')
+  
+  if [ -z "${new_access_token}" ] || [ "${new_access_token}" = "null" ]; then
+    echo "アクセストークンの更新に失敗しました"
+    echo "レスポンス: ${response}"
+    return 1
+  fi
+  
+  # 新しいトークン情報を保存
+  echo "${response}" > "${TOKEN_FILE}"
+  
+  # グローバル変数を更新
+  ACCESS_TOKEN="${new_access_token}"
+  REFRESH_TOKEN="${new_refresh_token}"
+  
+  echo "アクセストークンを更新しました"
+  return 0
 }
 
 # 画像をアップロード
@@ -121,11 +176,12 @@ function main() {
     exit 1
   fi
   
-  # 認証コードを取得
-  open_auth_url
-  
-  # アクセストークンを取得
-  get_access_token
+  # リフレッシュトークンでアクセストークンを更新
+  refresh_access_token || {
+    echo "リフレッシュトークンでの更新に失敗しました。新規認証を行います。"
+    open_auth_url
+    get_access_token
+  }
   
   # 画像ファイルを指定
   read -p "アップロードする画像ファイルのパスを入力してください: " IMAGE_FILE
