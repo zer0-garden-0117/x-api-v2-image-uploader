@@ -7,6 +7,11 @@ SCOPE="tweet.read tweet.write users.read offline.access media.write"
 # トークン情報を保存するファイル
 TOKEN_FILE="token.json"
 
+# 投稿情報
+# ToDo: 設定ファイルから読み込む
+IMAGE_FILE="image.png"
+TWEET_TEXT="#AIイラスト #AIArt"
+
 # Twitter APIのクライアントIDとクライアントシークレットとリダイレクトURLをconfig.iniから読み込む
 CONFIG_FILE="config.ini"
 if [ ! -f "${CONFIG_FILE}" ]; then
@@ -184,13 +189,13 @@ function main() {
   }
   
   # 画像ファイルを指定
-  read -p "アップロードする画像ファイルのパスを入力してください: " IMAGE_FILE
+  # read -p "アップロードする画像ファイルのパスを入力してください: " IMAGE_FILE
   
   # 画像をアップロード
   upload_media "${IMAGE_FILE}"
   
   # ツイート本文を入力
-  read -p "ツイート本文を入力してください: " TWEET_TEXT
+  # read -p "ツイート本文を入力してください: " TWEET_TEXT
   
   # ツイートを投稿
   post_tweet_with_media "${TWEET_TEXT}"
